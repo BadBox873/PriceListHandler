@@ -61,6 +61,11 @@ def write_fixture(path: Path, products=None, original=None):
 
 
 def run_smoke(store,window,folder):
+    from PySide6.QtGui import QFont,QRawFont
+    from PySide6.QtWidgets import QApplication
+    import os
+    font=QRawFont.fromFont(QFont('Segoe UI' if os.name=='nt' else 'DejaVu Sans',10))
+    assert font.isValid() and font.supportsCharacter(ord('P')) and font.supportsCharacter(ord('Я')), 'Latin/Cyrillic font rendering is unavailable'
     path = write_fixture(folder/'Контрольный прайс.xlsx')
     book = load_workbook(path)
     oid = store.create('Контрольный заказ — запуск сборки',book)
@@ -78,5 +83,6 @@ def run_smoke(store,window,folder):
     window.result_model.set_products(book.products,state['items'])
     backup = store.backup()
     summary = store.inspect_backup(backup)
-    return {'ui_started':True,'parser':len(book.products),'export':report,'backup':summary,
+    return {'ui_started':True,'latin_cyrillic_font_verified':True,'qt_platform':QApplication.platformName(),
+            'parser':len(book.products),'export':report,'backup':summary,
             'archive_restore':True,'data_directory':str(store.root)}

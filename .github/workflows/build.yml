@@ -72,6 +72,9 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'portable-smoke'
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', "`"$out`"") -Wait -PassThru
           if ($process.ExitCode -ne 0) { Get-Content "$out\failure.txt" -ErrorAction SilentlyContinue; throw "Portable smoke failed: $($process.ExitCode)" }
+          $report = Get-Content "$out\smoke.json" -Raw | ConvertFrom-Json
+          $expectedData = Join-Path (Split-Path $exe) 'Data'
+          if ($report.qt_platform -ne 'windows' -or !$report.latin_cyrillic_font_verified -or $report.default_data_directory -ne $expectedData) { throw 'Native rendering or portable data location failed' }
           Copy-Item "$out\smoke.json" release/portable-smoke.json
           Copy-Item "$out\window.png" release/portable-window.png
       - name: Test installer, installed EXE and uninstaller
@@ -86,6 +89,9 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'installed-smoke'
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', "`"$out`"") -Wait -PassThru
           if ($process.ExitCode -ne 0) { Get-Content "$out\failure.txt" -ErrorAction SilentlyContinue; throw "Installed smoke failed: $($process.ExitCode)" }
+          $report = Get-Content "$out\smoke.json" -Raw | ConvertFrom-Json
+          $expectedData = Join-Path $env:LOCALAPPDATA 'PriceListHandler'
+          if ($report.qt_platform -ne 'windows' -or !$report.latin_cyrillic_font_verified -or $report.default_data_directory -ne $expectedData) { throw 'Native rendering or installed data location failed' }
           Copy-Item "$out\smoke.json" release/installed-smoke.json
           Copy-Item "$out\window.png" release/installed-window.png
           $sentinel = Join-Path $env:LOCALAPPDATA 'PriceListHandler\uninstall-data-check.txt'
@@ -140,4 +146,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create v1.0.0-rc.1 artifacts/release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PriceListHandler v1.0.0-rc.1 — предварительный выпуск" --notes-file docs/RELEASE_NOTES.md --prerelease
+          gh release create v1.0.0-rc.2 artifacts/release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PriceListHandler v1.0.0-rc.2 — предварительный выпуск" --notes-file docs/RELEASE_NOTES.md --prerelease

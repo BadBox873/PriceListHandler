@@ -911,7 +911,10 @@ def main(argv=None):
     parser.add_argument('--smoke-test',type=Path,metavar='OUTPUT_DIR')
     args = parser.parse_args(argv)
     if args.smoke_test:
-        os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+        if os.name == 'nt':
+            os.environ['QT_QPA_PLATFORM']='windows'
+        else:
+            os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
     app = QApplication(sys.argv[:1])
     app.setApplicationName('PriceListHandler')
     app.setApplicationVersion(__version__)
@@ -951,6 +954,7 @@ def main(argv=None):
                 from .smoke import run_smoke
                 args.smoke_test.mkdir(parents=True,exist_ok=True)
                 result = run_smoke(store,window,args.smoke_test)
+                result['default_data_directory']=str(data_directory(True if args.portable else None))
                 (args.smoke_test/'smoke.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
                 window.grab().save(str(args.smoke_test/'window.png'))
                 app.exit(0)
