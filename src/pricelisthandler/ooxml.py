@@ -50,7 +50,8 @@ def read_package(path: Path) -> tuple[dict[str, bytes], list, bytes]:
                 raise UserError("Распакованный XLSX превышает 256 МиБ.")
             for i in infos:
                 p = PurePosixPath(i.filename)
-                if p.is_absolute() or ".." in p.parts or "\\" in i.filename or ":" in i.filename or i.flag_bits & 1:
+                raw_name = i.orig_filename
+                if raw_name != i.filename or '\x00' in raw_name or p.is_absolute() or ".." in p.parts or "\\" in raw_name or ":" in raw_name or i.flag_bits & 1:
                     raise UserError("Небезопасный путь или шифрование в XLSX.")
                 if i.file_size > MAX_PART:
                     raise UserError("Часть XLSX превышает 64 МиБ.")

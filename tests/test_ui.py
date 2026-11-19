@@ -84,3 +84,12 @@ def test_themes_dialogs_and_tooltips(store,book,qapp):
         assert all(w.toolTip() for w in dialog.findChildren(QWidget))
         dialog.reject()
     window.close()
+
+
+def test_bulk_missing_price_warning_is_visible(store,book,qapp):
+    oid=store.create('price-warning',book)
+    dialog=BulkDialog(store,oid)
+    dialog.text.setPlainText('00000000003:5')
+    dialog.parse()
+    assert 'сумма неполная' in dialog.grid.item(0,7).text()
+    dialog.accept()

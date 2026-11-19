@@ -1,6 +1,6 @@
 import copy
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 import pytest
 
@@ -204,7 +204,10 @@ def test_fail_closed_on_ambiguous_format(tmp_path,kind):
 def test_zip_path_traversal_rejected(tmp_path,name):
     path = write_fixture(tmp_path/'bad-path.xlsx')
     with ZipFile(path,'a') as z:
-        z.writestr(name,b'<evil/>')
+        info=ZipInfo('raw.xml')
+        info.filename=name
+        info.orig_filename=name
+        z.writestr(info,b'<evil/>')
     with pytest.raises(UserError):
         load_workbook(path)
 

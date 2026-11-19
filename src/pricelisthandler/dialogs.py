@@ -95,6 +95,8 @@ class BulkDialog(QDialog):
         for i,row in enumerate(rows):
             p = self.book.by_code.get(row['code'])
             status = 'Уже добавлено' if row.get('processed') else 'Исключено' if row.get('skip') else errors.get(row['id'],'Проверено')
+            if status == 'Проверено' and p is not None and p.price is None:
+                status = 'Цена не указана — общая сумма неполная'
             values = [row['raw'],f'{p.name}\n{p.code}' if p else 'Товар не выбран',
                       str(p.stock) if p and p.stock is not None else 'Неизвестен',row['qty'],
                       state['items'].get(row['code'],'—'),proposed.get(row['code'],'—'),'',status]
@@ -181,10 +183,11 @@ class BulkDialog(QDialog):
             state = self.state()
             proposed,accepted,errors = bulk_preview(self.book,state['items'],state['bulk'])
             lines = [f'{c}: {state["items"].get(c,"0")} → {v}' for c,v in proposed.items()]
+            price_warning = '\nЕсть товары без цены: общая сумма будет неполной.' if any(self.book.by_code[c].price is None for c in proposed) else ''
             if not accepted:
                 raise UserError('Нет проверенных строк. Исправь ошибки или подтверди соответствия.')
             box = QMessageBox(QMessageBox.Icon.Question,'Подтвердить массовое добавление',
-                f'Добавить {len(accepted)} проверенных строк ({len(proposed)} товаров)?\nПроблемных строк остаётся: {len(errors)}.',parent=self)
+                f'Добавить {len(accepted)} проверенных строк ({len(proposed)} товаров)?\nПроблемных строк остаётся: {len(errors)}.'+price_warning,parent=self)
             box.setDetailedText('\n'.join(lines))
             ok = box.addButton('Добавить',QMessageBox.ButtonRole.AcceptRole)
             box.addButton('Отмена',QMessageBox.ButtonRole.RejectRole)

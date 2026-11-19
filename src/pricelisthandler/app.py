@@ -31,6 +31,16 @@ from .widgets import Job, ProductModel, button, cell, confirm, error_box, fill_t
 LOG = logging.getLogger('PriceListHandler')
 
 
+class DiagnosticFormatter(logging.Formatter):
+    def format(self,record):
+        from datetime import datetime
+        data={'time':datetime.now().astimezone().isoformat(timespec='milliseconds'),
+              'level':record.levelname,'message':record.getMessage()[:2000]}
+        if record.exc_info:
+            data['exception']=self.formatException(record.exc_info)[-3000:]
+        return json.dumps(data,ensure_ascii=False)
+
+
 def data_directory(portable=None):
     executable = Path(sys.executable).resolve() if getattr(sys,'frozen',False) else Path(sys.argv[0]).resolve()
     portable = (executable.parent/'portable.flag').exists() if portable is None else portable
@@ -922,12 +932,17 @@ def main(argv=None):
         error_box(None,'Не удалось открыть папку данных. Для портативной версии выбери доступную для записи папку.\n'+str(exc))
         return 1
     handler = RotatingFileHandler(root/'diagnostics.log',maxBytes=1024*1024,backupCount=3,encoding='utf-8')
-    handler.setFormatter(logging.Formatter('{"time":"%(asctime)s","level":"%(levelname)s","message":%(message)r}'))
+    handler.setFormatter(DiagnosticFormatter())
     LOG.setLevel(logging.INFO)
     LOG.addHandler(handler)
     apply_theme(app,store.setting('theme','system'))
     app.styleHints().colorSchemeChanged.connect(lambda _:apply_theme(app,store.setting('theme','system')) if store.setting('theme','system')=='system' else None)
     window = MainWindow(store,check_updates=not bool(args.smoke_test),recover=not bool(args.smoke_test))
+    def unhandled_exception(kind,error,traceback):
+        operation=uuid.uuid4().hex[:10]
+        LOG.error('operation=%s stage=callback error=%s',operation,kind.__name__,exc_info=(kind,error,traceback))
+        error_box(window,str(error)+f'\nКод диагностики: {operation}. Черновик хранится в локальной базе.')
+    sys.excepthook=unhandled_exception
     window.show()
     if args.smoke_test:
         # Exercise the frozen application's actual imports, UI, storage, parser and exporter.
