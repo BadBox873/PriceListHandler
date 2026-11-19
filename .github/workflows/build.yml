@@ -13,13 +13,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          if python -c "import ctypes; [ctypes.CDLL(name) for name in ('libEGL.so.1','libOpenGL.so.0','libxkbcommon.so.0')]"; then
+            echo 'Qt runtime libraries are already available'
+          else
+            sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y libegl1 libopengl0 libxkbcommon0
+          fi
       - run: python -m pip install -e '.[dev]'
       - name: Tests and UI checks
         env:
@@ -34,6 +42,7 @@ jobs:
   windows:
     needs: test
     runs-on: windows-2025
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
