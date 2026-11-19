@@ -55,6 +55,8 @@ def read_package(path: Path) -> tuple[dict[str, bytes], list, bytes]:
                 if i.file_size > MAX_PART:
                     raise UserError("Часть XLSX превышает 64 МиБ.")
             parts = {i.filename: z.read(i) for i in infos}
+            if any(n.startswith('_xmlsignatures/') for n in parts):
+                raise UserError('Подписанные XLSX не поддерживаются: изменение G сделает цифровую подпись недействительной.')
             for required in ("[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml"):
                 if required not in parts:
                     raise UserError(f"В XLSX отсутствует обязательная часть: {required}")
@@ -62,6 +64,8 @@ def read_package(path: Path) -> tuple[dict[str, bytes], list, bytes]:
                 if name.endswith((".xml", ".rels", ".vml")):
                     tree = xml(data)
                     if name.endswith(".rels"):
+                        if tree.tag != '{http://schemas.openxmlformats.org/package/2006/relationships}Relationships':
+                            raise UserError(f'Некорректная структура связей XLSX: {name}')
                         base = "" if name == "_rels/.rels" else posixpath.dirname(posixpath.dirname(name))
                         ids = set()
                         for rel in tree:
@@ -180,7 +184,7 @@ def load_workbook(path: str | Path) -> Workbook:
         raise UserError("Повторяющиеся строки XLSX.")
     for row in rows:
         rn = row.get("r", "")
-        if not rn.isdigit() or int(rn) < 1:
+        if not rn.isdigit() or not 1 <= int(rn) <= 1048576:
             raise UserError("Некорректный номер строки.")
         cells = {c.get("r"): c for c in row.findall(TAG + "c")}
         if any(not re.fullmatch(r"[A-Z]+" + rn, address or "") for address in cells):
@@ -207,6 +211,8 @@ def load_workbook(path: str | Path) -> Workbook:
         g = cells.get("G" + rn)
         if g is None or set(g.attrib) - {"r", "s", "t"} or any(n.tag not in (TAG + "v", TAG + "is") for n in g):
             raise UserError(f"G{rn}: отсутствующая ячейка, формула или неизвестное содержимое. Нужна проверка формата.")
+        if b'<!--' in raw_cells['G'+rn] or b'<?' in raw_cells['G'+rn]:
+            raise UserError(f'G{rn}: нестандартные XML-вставки; точечное изменение заблокировано.')
         if len(g.findall(TAG + "v")) > 1 or len(g.findall(TAG + "is")) > 1:
             raise UserError(f"G{rn}: неоднозначное значение.")
         for col in "EF":

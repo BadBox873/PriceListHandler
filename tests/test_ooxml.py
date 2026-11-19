@@ -227,14 +227,14 @@ def test_real_price_counts_and_twenty(real_book,tmp_path):
 
 
 def test_real_many_rows_and_imported_cleanup(real_book,tmp_path):
-    chosen = [p for p in real_book.products if p.stock is not None and p.stock>=1][::97]
+    chosen = [p for p in real_book.products if p.stock is not None and p.stock>=3][::97]
     items = {p.code:'1' for p in chosen}
     first = tmp_path/'Many.xlsx'
     report = export_workbook(real_book,items,first)
     assert len(report['changed_cells'])==len(chosen)>50
     filled = load_workbook(first)
     items.pop(chosen[0].code)
-    items[chosen[1].code]='1'
+    items[chosen[1].code]='2'
     second = tmp_path/'Cleared.xlsx'
     report = export_workbook(filled,items,second)
-    assert report['changed_cells']==['G'+str(chosen[0].row)]
+    assert set(report['changed_cells'])=={'G'+str(chosen[0].row),'G'+str(chosen[1].row)}

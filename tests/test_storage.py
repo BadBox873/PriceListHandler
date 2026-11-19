@@ -159,3 +159,32 @@ def test_corrupt_source_blocks_access(store,book):
     (store.sources/(sha+'.xlsx')).write_bytes(b'broken')
     with pytest.raises(UserError):
         store.book(sha)
+
+
+def test_every_original_path_is_protected_when_content_is_shared(store,book,tmp_path):
+    from pricelisthandler.ooxml import load_workbook
+    second=tmp_path/'Другой внешний прайс.xlsx'
+    second.write_bytes(book.path.read_bytes())
+    store.create('first',book)
+    store.create('second',load_workbook(second))
+    protected=store.protected_paths()
+    assert book.path in protected and second in protected
+
+
+def test_restore_commit_failure_rolls_back_without_mixing_data(store,book,monkeypatch):
+    import pricelisthandler.storage as module
+    oid=store.create('before',book)
+    backup=store.backup()
+    store.rename(oid,'current')
+    before=store.get(oid)
+    original_replace=module.os.replace
+    def fail_commit(source,target):
+        if Path(source).name=='orders.sqlite3' and Path(target)==store.db_path:
+            raise OSError('injected commit failure')
+        return original_replace(source,target)
+    monkeypatch.setattr(module.os,'replace',fail_commit)
+    with pytest.raises(OSError):
+        store.restore_backup(backup)
+    assert store.get(oid)==before
+    assert store.book(before['state']['price']).sha256==book.sha256
+    assert list(store.backup_dir().glob('protect-*.zip'))

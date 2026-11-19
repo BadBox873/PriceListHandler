@@ -1,0 +1,115 @@
+name: Test, build and release Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
+      - run: python -m pip install -e '.[dev]'
+      - name: Tests and UI checks
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-test-results
+          path: test-results.xml
+
+  windows:
+    needs: test
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - run: python -m pip install -e '.[dev]'
+      - name: Windows tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q --junitxml=windows-tests.xml
+      - name: Ensure Inno Setup is available
+        shell: pwsh
+        run: |
+          if (!(Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+      - name: Build standalone packages
+        run: python scripts/build_windows.py
+      - name: Test frozen portable in a Cyrillic path with spaces
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem release/*Portable-x64.zip | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP 'Проверка программы portable'
+          Expand-Archive $package.FullName -DestinationPath $target
+          $exe = Join-Path $target 'PriceListHandler\PriceListHandler.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'portable-smoke'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', "`"$out`"") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { Get-Content "$out\failure.txt" -ErrorAction SilentlyContinue; throw "Portable smoke failed: $($process.ExitCode)" }
+          Copy-Item "$out\smoke.json" release/portable-smoke.json
+          Copy-Item "$out\window.png" release/portable-window.png
+      - name: Test installer, installed EXE and uninstaller
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release/*Setup-x64.exe | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP 'Установленная программа с пробелами'
+          $process = Start-Process -FilePath $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$target`"") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          if (Test-Path "$target\portable.flag") { throw 'Installed package contains portable marker' }
+          $exe = Join-Path $target 'PriceListHandler.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'installed-smoke'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', "`"$out`"") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { Get-Content "$out\failure.txt" -ErrorAction SilentlyContinue; throw "Installed smoke failed: $($process.ExitCode)" }
+          Copy-Item "$out\smoke.json" release/installed-smoke.json
+          Copy-Item "$out\window.png" release/installed-window.png
+          $sentinel = Join-Path $env:LOCALAPPDATA 'PriceListHandler\uninstall-data-check.txt'
+          New-Item (Split-Path $sentinel) -ItemType Directory -Force | Out-Null
+          Set-Content $sentinel 'User data must survive uninstall'
+          $uninstaller = Get-ChildItem "$target\unins*.exe" | Select-Object -First 1
+          $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path $sentinel)) { throw 'Uninstall failed or user data removed' }
+          Remove-Item $sentinel
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PriceListHandler-Windows-x64
+          path: |
+            release/*
+            windows-tests.xml
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PriceListHandler-Windows-x64
+          path: artifacts
+      - name: Publish checked release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/release/* --repo "$GITHUB_REPOSITORY" --title "PriceListHandler $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md --verify-tag

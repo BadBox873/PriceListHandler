@@ -141,7 +141,7 @@ class Store:
         if not name.strip():
             raise UserError("Укажи имя заказа.")
         sha = self.register_price(book)
-        state = {"price": sha, "items": book.imported, "bulk": [], "bulk_text": ""}
+        state = {"supplier": "khimbest", "price": sha, "items": book.imported, "bulk": [], "bulk_text": ""}
         return self._insert(name.strip(), state)
 
     def _insert(self, name, state, parent=None, history=None, cursor=0):

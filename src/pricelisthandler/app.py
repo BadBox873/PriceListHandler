@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
     QTabBar, QTabWidget, QVBoxLayout, QWidget)
 
 from . import __version__
+from .adapters import ADAPTERS
 from .dialogs import BulkDialog, DictionaryDialog, ExportHistoryDialog, TransferDialog
 from .domain import UserError, decimal_value, money, quantity, search, totals
 from .ooxml import export_workbook, load_workbook
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
     def __init__(self,store,*,check_updates=True,recover=True):
         super().__init__()
         self.store,self.oid,self.book,self.readonly = store,None,None,False
+        self.adapter = ADAPTERS['khimbest']
         self.jobs = set()
         self.search_generation = 0
         self.list_generation = 0
@@ -123,7 +125,7 @@ class MainWindow(QMainWindow):
         sl.setContentsMargins(0,6,0,0)
         self.stack = QStackedWidget()
         sl.addWidget(self.stack)
-        self.suppliers.addTab(supplier,'ХИМБЭСТ')
+        self.suppliers.addTab(supplier,self.adapter.name)
         self.suppliers.setTabToolTip(0,'Адаптер ХИМБЭСТ. Другие поставщики подключаются отдельными проверенными адаптерами.')
         outer.addWidget(self.suppliers)
         self.make_list()
@@ -302,7 +304,7 @@ class MainWindow(QMainWindow):
             name,ok = QInputDialog.getText(self,'Новый заказ','Название черновика:',text='ХИМБЭСТ — '+date.today().strftime('%d.%m.%Y'))
             if ok:
                 self.run_job('Сохраняю неизменяемую копию прайса…',lambda:self.store.create(name,book),self.open_order)
-        self.run_job('Проверяю прайс и структуру XLSX…',lambda:load_workbook(path),loaded)
+        self.run_job('Проверяю прайс и структуру XLSX…',lambda:self.adapter.load(path),loaded)
 
     def open_selected(self,*args):
         oid = self.selected_order()
@@ -638,7 +640,7 @@ class MainWindow(QMainWindow):
             if dialog.exec():
                 self.refresh_order()
                 self.do_search()
-        self.run_job('Проверяю обновлённый прайс…',lambda:load_workbook(path),loaded)
+        self.run_job('Проверяю обновлённый прайс…',lambda:self.adapter.load(path),loaded)
 
     def preview(self):
         if not self.oid:
@@ -754,7 +756,7 @@ class MainWindow(QMainWindow):
         self.store.set_setting('export_dir',str(output.parent))
         oid,book = self.oid,self.book
         def work():
-            report = export_workbook(book,state['items'],output,replace=replace,protected=protected)
+            report = self.adapter.export(book,state['items'],output,replace=replace,protected=protected)
             self.store.complete_export(oid,output,report,expected=state)
             LOG.info('operation=%s stage=export verified=true changed_cells=%d',uuid.uuid4().hex[:10],len(report['changed_cells']))
             return report
